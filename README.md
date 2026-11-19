@@ -2,18 +2,66 @@
 
 Rust + cef-rs 기반의 AI용 로컬 Chromium 브라우저. 사람이 볼 수 있는 Chromium 창과 AI가 사용할 수 있는 JSON API / MCP 서버를 함께 제공한다. AI 모델이나 API 키는 내장하지 않는다. 연결한 에이전트가 판단하고 Aibro가 브라우저 명령을 실행한다.
 
-## 시작
+## Windows 실행 파일로 시작
 
-현재 구현·검증 대상은 **Windows x64**다. Rust MSVC 툴체인과 Visual Studio C++ Build Tools(CMake 포함)가 필요하다. 첫 빌드는 CEF 런타임을 내려받으므로 시간과 수 GB의 디스크 공간이 필요하다. Chromium 업데이트는 의존성 버전을 명시적으로 올리고 테스트한다.
+**Windows x64용 포터블 ZIP**은 [GitHub Releases](https://github.com/kkalrak/aibro/releases)에서 내려받는다. 소스 코드 ZIP이 아니라 `aibro-<버전>-windows-x64.zip`을 선택한다. 이 파일에는 Chromium 런타임과 MCP 서버가 포함되어 있어 Rust나 Node.js를 설치하지 않고 실행할 수 있다.
+
+Windows에 Microsoft Visual C++ x64 런타임이 필요하다. `VCRUNTIME140.dll` 누락 오류가 나오면 [Microsoft 공식 Visual C++ Redistributable 다운로드](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist/)에서 최신 x64 패키지를 설치한다. 이 ZIP에는 해당 Microsoft 설치 프로그램을 포함하지 않는다.
+
+1. ZIP 전체를 쓰기 가능한 폴더(예: `C:\Apps\Aibro`)에 압축 해제한다. ZIP 안의 버전명 폴더에 실행 파일이 들어 있다.
+2. 실행 파일이 있는 폴더에서 `aibro.exe`를 실행한다. Chromium 창이 열린다.
+3. AI 도구를 연결하려면 아래의 **MCP 설명과 연결**을 따른다. MCP를 연결하지 않아도 창에서 직접 웹사이트를 사용할 수 있다.
 
 ```powershell
-.\scripts\build.ps1
+# aibro.exe가 있는 폴더로 이동한 뒤 실행
+.\aibro.exe --url=https://example.com
+
+# 별도 PowerShell 창에서 연결 확인
+.\aibro-agent.exe --call '{"op":"tabs"}'
+.\aibro-agent.exe --call '{"op":"snapshot","tab":1}'
+
+# 브라우저 종료: 열린 창의 작업이 끝난 뒤 실행
+.\aibro-agent.exe --call '{"op":"shutdown"}'
+```
+
+`aibro.exe` 하나만 복사하지 않는다. `aibro.dll`, `libcef.dll`, `locales/` 등 ZIP의 나머지 파일도 함께 있어야 한다. 프로필·로그·연결 정보는 실행 파일 옆 `.aibro/`에 생성되므로 이 폴더는 본인이 관리하고, 다른 사람에게 전달할 ZIP에는 포함하지 않는다. 실행 파일이 사용하는 폴더에 쓰기 권한이 필요하다. 별도 데이터 폴더는 `--aibro-data-dir=C:\원하는\경로`로 지정하며 MCP에도 같은 경로를 전달한다.
+
+배포 ZIP 옆 `.sha256` 파일로 무결성을 확인할 수 있다. `Get-FileHash .\aibro-<버전>-windows-x64.zip -Algorithm SHA256` 결과를 비교한다. 이 초기 버전의 실행 파일은 코드 서명되지 않았다.
+
+## Windows에서 직접 컴파일
+
+현재 구현·검증 대상은 **Windows x64**다. 다음 개발 도구가 필요하다.
+
+- Git과 Rust의 `stable-x86_64-pc-windows-msvc` 툴체인. 개발 환경 검증 버전은 Rust 1.97.1이다.
+- Visual Studio 2022 C++ Build Tools의 MSVC x64 컴파일러, Windows SDK, CMake/Ninja 구성 요소. 설치 프로그램에서 **C++를 사용한 데스크톱 개발**과 **Windows용 C++ CMake 도구**를 선택한다.
+- PowerShell. Node.js는 `smoke.mjs`, `benchmark.mjs` 개발 검증에만 필요하다.
+
+첫 빌드는 CEF 런타임을 내려받으므로 시간과 수 GB의 디스크 공간이 필요하다. Chromium 업데이트는 의존성 버전을 명시적으로 올리고 테스트한다.
+
+```powershell
+git clone https://github.com/kkalrak/aibro.git
+cd aibro
+rustup toolchain install stable-x86_64-pc-windows-msvc
+rustup override set stable-x86_64-pc-windows-msvc
+
+# 최적화된 Windows 실행 번들
+.\scripts\build.ps1 -Release
 .\scripts\run.ps1
 .\scripts\call.ps1 '{"op":"tabs"}'
 .\scripts\call.ps1 '{"op":"snapshot","tab":1}'
 ```
 
 실행 번들은 `target/bundle/`에 있다. `scripts/run.ps1`을 사용하면 프로필·연결 정보·로그가 프로젝트의 `.aibro/`에 저장된다. 실행 파일을 직접 실행하면 실행 파일 옆 `.aibro/`를 쓴다. 별도 저장 위치는 `--aibro-data-dir=<절대 경로>`로 지정한다. CEF의 Windows 재실행 과정에서도 유지되도록 스크립트는 이 인자를 전달한다.
+
+개발용 비최적화 빌드는 `scripts/build.ps1`을 인자 없이 실행한다. 두 모드 모두 `target/bundle/`에 결과를 쓰므로, 실행 중인 번들을 닫고 빌드한다. 다운로드한 CEF는 `%LOCALAPPDATA%\aibro\cef`에 캐시한다.
+
+배포 ZIP을 만들려면 release 빌드가 끝난 뒤 다음을 실행한다. 실행에 필요한 파일만 명시적으로 복사하고, 프로필·토큰·로그·디버그 파일은 제외한다. 같은 버전의 staging 폴더가 이미 있으면 덮어쓰지 않고 중단한다.
+
+```powershell
+.\scripts\package.ps1 -Version 0.1.0
+# target/packages/aibro-0.1.0-windows-x64.zip
+# target/packages/aibro-0.1.0-windows-x64.zip.sha256
+```
 
 `cargo run`은 브라우저 실행 방법이 아니다. Windows CEF 샌드박스에 필요한 bootstrap executable과 DLL을 `build.ps1`이 패키징한다. `--no-sandbox`는 사용하지 않는다. 빌드를 다시 하기 전에 실행 중인 브라우저를 종료한다.
 
@@ -54,7 +102,41 @@ Rust + cef-rs 기반의 AI용 로컬 Chromium 브라우저. 사람이 볼 수 �
 
 `press`는 Enter, Tab, Escape, Backspace, Delete, ArrowLeft, ArrowUp, ArrowRight, ArrowDown을 지원한다. URL은 HTTP(S)와 `about:blank`만 받는다. 알 수 없는 필드는 오류다. 실패한 동작은 자동 재시도하지 않는다. 전송·결제 등의 중복 실행을 막기 위해 현재 페이지를 읽고 다시 판단한다.
 
-## MCP 연결
+## MCP 설명과 연결
+
+**MCP(Model Context Protocol)**는 AI 클라이언트가 외부 도구를 호출하는 통신 규약이다. Aibro의 MCP 서버는 AI가 요청한 페이지 읽기·클릭·입력 같은 작업을 실행 중인 브라우저로 전달한다. MCP 자체가 AI 모델은 아니며, Aibro에도 모델이나 구독 계정은 포함되지 않는다. MCP를 지원하는 AI 클라이언트가 별도로 필요하다.
+
+```text
+AI 클라이언트
+  → aibro-agent.exe (MCP 서버, 표준 입출력)
+  → 인증된 로컬 HTTP API
+  → aibro.exe / aibro.dll (Rust + CEF Chromium)
+```
+
+**두 실행 파일의 역할은 다르다.** `aibro.exe`는 브라우저 창을 실행하고, `aibro-agent.exe`는 그 브라우저를 AI 도구로 연결한다. MCP 서버만 실행하면 브라우저가 자동으로 켜지지는 않는다.
+
+### 다운로드한 ZIP을 MCP에 연결
+
+1. 먼저 `aibro.exe`를 실행한다. `.aibro/connection.json`이 자동으로 생성된다.
+2. AI 클라이언트의 MCP 서버 설정에 아래 내용을 등록한다. `C:\Apps\Aibro`는 **실제로 aibro-agent.exe가 있는 폴더**로 바꾼다.
+3. 클라이언트에서 서버를 연결하거나 재시작한 뒤 `browser` 도구가 표시되는지 확인한다.
+
+```json
+{
+  "mcpServers": {
+    "aibro": {
+      "command": "C:\\Apps\\Aibro\\aibro-agent.exe",
+      "args": ["--data-dir", "C:\\Apps\\Aibro\\.aibro"]
+    }
+  }
+}
+```
+
+위 JSON은 `mcpServers` 형식을 쓰는 클라이언트용 예시다. 클라이언트에 따라 설정 파일 위치나 형식은 다르지만 **실행 명령은 aibro-agent.exe의 절대 경로, 인자는 --data-dir과 브라우저 데이터 폴더**로 동일하다. MCP 프로세스는 클라이언트가 실행·유지하므로 PowerShell에서 따로 서버를 띄울 필요가 없다. 수동으로 인자 없이 실행하면 표준 입력의 MCP 요청을 기다리는 상태가 된다.
+
+AI에게는 예를 들어 “Aibro로 열린 탭을 확인하고 현재 페이지를 요약해줘”라고 요청한다. AI는 `browser` 도구에 `{"op":"tabs"}`를 보내고, 받은 탭 ID로 `{"op":"snapshot","tab":1}`을 호출할 수 있다. 클릭과 입력에는 최신 스냅샷의 `ref`를 사용한다. 스크린샷은 MCP image content로 전달된다.
+
+### 소스에서 빌드한 경우
 
 `target/bundle/aibro-agent.exe`는 표준 입출력 MCP 서버이며 별도로 실행 중인 브라우저에 연결한다. MCP 초기화 프로토콜은 2025-11-25 및 이전 3개 버전을 지원한다. 클라이언트 설정 예:
 
@@ -70,6 +152,14 @@ Rust + cef-rs 기반의 AI용 로컬 Chromium 브라우저. 사람이 볼 수 �
 ```
 
 도구 이름은 `browser`, 인자는 위 표의 JSON 명령이다. 스크린샷은 MCP image content로 전달된다. 이 저장소는 클라이언트의 전역 MCP 설정을 수정하지 않는다.
+
+### 연결 문제 확인
+
+- `connection.json`을 찾지 못함: 브라우저를 먼저 켜고, `--data-dir`이 브라우저와 MCP에서 같은 폴더인지 확인한다. 소스용 `run.ps1`은 저장소의 `.aibro/`를 사용하고, EXE 직접 실행은 실행 파일 옆 `.aibro/`를 사용한다.
+- 브라우저 연결 거부: 창이 종료됐거나 예전 연결 정보일 수 있다. 브라우저를 다시 실행하면 새 포트와 인증 토큰을 자동으로 기록한다.
+- 서버 실행 후 화면이 멈춘 것처럼 보임: `aibro-agent.exe`의 기본 모드는 MCP 서버다. 터미널에서 단발성 호출을 하려면 `--call`을 사용한다.
+- `libcef.dll` 등 실행 파일 누락: ZIP 전체를 다시 압축 해제하고 파일들을 같은 폴더에 둔다.
+- 오래된 ref 오류: 새 `snapshot`을 읽고 새 ref로 작업한다. iframe 내부 조작 등 지원하지 않는 기능은 아래 현재 범위를 참고한다.
 
 같은 Rust 실행 파일은 CLI로도 쓸 수 있다.
 

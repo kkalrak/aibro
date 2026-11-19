@@ -2,7 +2,10 @@ import http from 'node:http';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-const connection=JSON.parse(fs.readFileSync('.aibro/connection.json','utf8'));
+import {resolve,join} from 'node:path';
+const dataDir=resolve(globalThis.process.env.AIBRO_TEST_DATA_DIR||'.aibro');
+const executable=resolve(globalThis.process.env.AIBRO_TEST_AGENT||'target/bundle/aibro-agent.exe');
+const connection=JSON.parse(fs.readFileSync(join(dataDir,'connection.json'),'utf8'));
 const headers={'Authorization':`Bearer ${connection.token}`,'Content-Type':'application/json'};
 let checks=0;
 async function call(command,ok=true){
@@ -43,7 +46,7 @@ try{
   await call({op:'scroll',tab,y:200});await call({op:'press',tab,key:'Tab'});
   await call({op:'navigate',tab,url:'javascript:alert(1)'},false);
   await call({op:'click',tab,target:'missing',extra:true},false);
-  const process=spawn('target/bundle/aibro-agent.exe',['--data-dir',`${processRoot()}/.aibro`],{stdio:['pipe','pipe','pipe']});
+  const process=spawn(executable,['--data-dir',dataDir],{stdio:['pipe','pipe','pipe']});
   let output='';let errors='';process.stdout.on('data',d=>output+=d);process.stderr.on('data',d=>errors+=d);
   for(const request of [
     {id:1,method:'initialize',params:{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'smoke',version:'1'}}},
@@ -60,4 +63,3 @@ try{
   if(tab)await call({op:'close',tab}).catch(()=>{});
   fixture.closeAllConnections();await new Promise(resolve=>fixture.close(resolve));
 }
-function processRoot(){return globalThis.process.cwd().replaceAll('\\','/');}
