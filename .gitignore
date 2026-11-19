@@ -1,0 +1,7 @@
+/target/
+/.reference/
+/.aibro/
+/node_modules/
+.env
+.env.*
+!.env.example
